@@ -13,13 +13,15 @@ interface UseAgentStreamOptions {
   onError?: (message: string) => void;
   autoScroll?: boolean;
   debounceMs?: number;
+  sessionId?: string;
+  initialMessages?: Item[];
 }
 
 export function useAgentStream(options: UseAgentStreamOptions = {}) {
   const [isStreaming, setIsStreaming] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [usage, setUsage] = useState<any>(null);
-  const [messages, setMessages] = useState<Item[]>([]);
+  const [messages, setMessages] = useState<Item[]>(options.initialMessages || []);
   
   const clientRef = useRef<AgentStreamClient | null>(null);
   const debounceRef = useRef<NodeJS.Timeout | null>(null);
@@ -49,21 +51,32 @@ export function useAgentStream(options: UseAgentStreamOptions = {}) {
       if (lastItem && lastItem.type === 'message' && lastItem.role === 'assistant') {
         // Create immutable update instead of mutation
         const newItem = { ...lastItem };
-        newItem.content = [...lastItem.content];
         
-        const outputContentIndex = newItem.content.findIndex(c => c.type === 'output_text');
-        if (outputContentIndex >= 0) {
-          // Replace existing content item
-          newItem.content[outputContentIndex] = {
-            ...newItem.content[outputContentIndex],
-            text: fullText
-          };
-        } else {
-          // Add new output_text content
-          newItem.content.push({
+        // Handle both string and ContentItem[] formats
+        if (typeof lastItem.content === 'string') {
+          // If content is string, convert to ContentItem[] format for assistant messages
+          newItem.content = [{
             type: 'output_text',
             text: fullText
-          });
+          }];
+        } else {
+          // Handle ContentItem[] format
+          newItem.content = [...lastItem.content];
+          
+          const outputContentIndex = newItem.content.findIndex(c => c.type === 'output_text');
+          if (outputContentIndex >= 0) {
+            // Replace existing content item
+            newItem.content[outputContentIndex] = {
+              ...newItem.content[outputContentIndex],
+              text: fullText
+            };
+          } else {
+            // Add new output_text content
+            newItem.content.push({
+              type: 'output_text',
+              text: fullText
+            });
+          }
         }
         
         updated[updated.length - 1] = newItem;
@@ -122,19 +135,33 @@ export function useAgentStream(options: UseAgentStreamOptions = {}) {
         if (lastItem && lastItem.type === 'message' && lastItem.role === 'assistant') {
           // Create immutable update
           const newItem = { ...lastItem };
-          newItem.content = [...newItem.content];
           
-          const reasoningIndex = newItem.content.findIndex(c => c.type === 'reasoning');
-          if (reasoningIndex >= 0) {
-            newItem.content[reasoningIndex] = {
-              ...newItem.content[reasoningIndex],
-              text: (newItem.content[reasoningIndex].text || '') + delta
-            };
-          } else {
-            newItem.content.push({
+          // Handle both string and ContentItem[] formats
+          if (typeof lastItem.content === 'string') {
+            // Convert string to ContentItem[] for assistant messages with reasoning
+            newItem.content = [{
+              type: 'output_text',
+              text: lastItem.content
+            }, {
               type: 'reasoning',
               text: delta
-            });
+            }];
+          } else {
+            // Handle ContentItem[] format
+            newItem.content = [...lastItem.content];
+            
+            const reasoningIndex = newItem.content.findIndex(c => c.type === 'reasoning');
+            if (reasoningIndex >= 0) {
+              newItem.content[reasoningIndex] = {
+                ...newItem.content[reasoningIndex],
+                text: (newItem.content[reasoningIndex].text || '') + delta
+              };
+            } else {
+              newItem.content.push({
+                type: 'reasoning',
+                text: delta
+              });
+            }
           }
           
           updated[updated.length - 1] = newItem;
@@ -152,19 +179,30 @@ export function useAgentStream(options: UseAgentStreamOptions = {}) {
         if (lastItem && lastItem.type === 'message' && lastItem.role === 'assistant') {
           // Create immutable update
           const newItem = { ...lastItem };
-          newItem.content = [...newItem.content];
           
-          const refusalIndex = newItem.content.findIndex(c => c.type === 'refusal');
-          if (refusalIndex >= 0) {
-            newItem.content[refusalIndex] = {
-              ...newItem.content[refusalIndex],
-              text: (newItem.content[refusalIndex].text || '') + delta
-            };
-          } else {
-            newItem.content.push({
+          // Handle both string and ContentItem[] formats
+          if (typeof lastItem.content === 'string') {
+            // Convert string to ContentItem[] for assistant messages with refusal
+            newItem.content = [{
               type: 'refusal',
               text: delta
-            });
+            }];
+          } else {
+            // Handle ContentItem[] format
+            newItem.content = [...lastItem.content];
+            
+            const refusalIndex = newItem.content.findIndex(c => c.type === 'refusal');
+            if (refusalIndex >= 0) {
+              newItem.content[refusalIndex] = {
+                ...newItem.content[refusalIndex],
+                text: (newItem.content[refusalIndex].text || '') + delta
+              };
+            } else {
+              newItem.content.push({
+                type: 'refusal',
+                text: delta
+              });
+            }
           }
           
           updated[updated.length - 1] = newItem;
@@ -233,7 +271,7 @@ export function useAgentStream(options: UseAgentStreamOptions = {}) {
 
     client.onResponseStart = () => {
       setError(null);
-      // Add new assistant message to history
+      // Add new assistant message to history with ContentItem[] format for streaming updates
       const newMessage: Item = {
         type: 'message',
         role: 'assistant',
@@ -292,10 +330,7 @@ export function useAgentStream(options: UseAgentStreamOptions = {}) {
     const userMessage: Item = {
       type: 'message',
       role: 'user',
-      content: [{
-        type: 'output_text',
-        text: message
-      }]
+      content: message
     };
     setMessages(prev => [...prev, userMessage]);
 
@@ -308,7 +343,7 @@ export function useAgentStream(options: UseAgentStreamOptions = {}) {
     clientRef.current.reset();
 
     try {
-      await clientRef.current.startStream(message);
+      await clientRef.current.startStream(message, options.sessionId);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unknown error');
       setIsStreaming(false);
@@ -327,13 +362,6 @@ export function useAgentStream(options: UseAgentStreamOptions = {}) {
     setMessages([]);
     setError(null);
     setUsage(null);
-  }, []);
-
-  const addMessage = useCallback((message: Item) => {
-    const newMessage: Item = {
-      ...message,
-    };
-    setMessages(prev => [...prev, newMessage]);
   }, []);
 
   // Calculate streaming statistics
@@ -360,7 +388,6 @@ export function useAgentStream(options: UseAgentStreamOptions = {}) {
     startStream,
     stopStream,
     clearMessages,
-    addMessage,
 
     // Utilities
     hasActiveToolCalls: toolCallItems.some(t => t.status === 'in_progress'),

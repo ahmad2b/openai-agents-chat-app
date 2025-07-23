@@ -80,8 +80,8 @@ export class AgentStreamClient {
     }
   }
 
-  async startStream(message: string | AgentInputItem, maxTurns: number = 10): Promise<void> {
-    this.log('info', `Starting stream for message: "${message}" (max_turns: ${maxTurns})`);
+  async startStream(message: string | AgentInputItem, sessionId?: string): Promise<void> {
+    this.log('info', `Starting stream for message: "${message}" (session: ${sessionId})`);
     this.eventCount = 0;
     
     // Validate message input
@@ -95,7 +95,7 @@ export class AgentStreamClient {
     this.abortController = new AbortController();
     
     try {
-      await this.executeStream(message, maxTurns);
+      await this.executeStream(message, sessionId);
     } catch (error) {
       // Don't retry if the request was aborted
       if (error instanceof Error && error.name === 'AbortError') {
@@ -103,11 +103,11 @@ export class AgentStreamClient {
         return;
       }
       this.log('error', 'Stream execution failed', error);
-      await this.handleStreamError(error, message, maxTurns);
+      await this.handleStreamError(error, message, sessionId);
     }
   }
 
-  private async executeStream(message: string | AgentInputItem, maxTurns: number): Promise<void> {
+  private async executeStream(message: string | AgentInputItem, sessionId?: string): Promise<void> {
     this.log('info', 'Executing stream request to backend');
     
     // Check if already aborted
@@ -116,7 +116,10 @@ export class AgentStreamClient {
       return;
     }
     
-    const requestBody = JSON.stringify({ message });
+    const requestBody = JSON.stringify({ 
+      message,
+      ...(sessionId && { sessionId })
+    });
     this.log('info', `Request body: ${requestBody}`);
     
     const response = await fetch('/api/chat', {
@@ -480,7 +483,7 @@ export class AgentStreamClient {
     this.onError?.(userFriendlyMessage);
   }
 
-  private async handleStreamError(error: any, message: string | AgentInputItem, maxTurns: number): Promise<void> {
+  private async handleStreamError(error: any, message: string | AgentInputItem, sessionId?: string): Promise<void> {
     this.log('error', 'Stream execution error', error);
     
     if (this.retryCount < this.maxRetries) {
@@ -508,9 +511,9 @@ export class AgentStreamClient {
       await new Promise(resolve => setTimeout(resolve, this.retryDelay * this.retryCount));
       
       try {
-        await this.executeStream(message, maxTurns);
+        await this.executeStream(message, sessionId);
       } catch (retryError) {
-        await this.handleStreamError(retryError, message, maxTurns);
+        await this.handleStreamError(retryError, message, sessionId);
       }
     } else {
       const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';

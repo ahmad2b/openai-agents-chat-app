@@ -20,17 +20,22 @@ import {
 import { cn } from '@/lib/utils';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Markdown } from '@/components/chat/markdown';
+import { getMessageText, getContentByType, Item } from '@/lib/streaming/types';
 
 interface ChatInterfaceProps {
   className?: string;
+  initialMessages?: Item[];
+  sessionId?: string;
 }
 
-export function ChatInterface({ className }: ChatInterfaceProps) {
+export function ChatInterface({ className, initialMessages = [], sessionId }: ChatInterfaceProps) {
   // Memoize the options object to prevent useEffect from rerunning
   const streamOptions = useMemo(() => ({
     autoScroll: true,
-    debounceMs: 4
-  }), []);
+    debounceMs: 4,
+    sessionId,
+    initialMessages
+  }), [sessionId, initialMessages]);
 
   const {
     isStreaming,
@@ -66,11 +71,8 @@ export function ChatInterface({ className }: ChatInterfaceProps) {
     if (messages.length > 0) {
       const lastUserMessage = messages.filter(m => m.type === 'message' && (m as any).role === 'user').pop() as any;
       if (lastUserMessage) {
-        // Get text from content items
-        const text = lastUserMessage.content
-          .filter((c: any) => c.type === 'input_text' || c.type === 'output_text')
-          .map((c: any) => c.text)
-          .join('');
+        // Get text using helper function
+        const text = getMessageText(lastUserMessage.content);
         handleSendMessage(text);
       }
     }
@@ -107,21 +109,10 @@ export function ChatInterface({ className }: ChatInterfaceProps) {
           );
         }
         
-        // Convert MessageItem to ChatMessage format for compatibility
-        const regularContent = item.content
-          .filter((c: any) => c.type === 'output_text' || c.type === 'input_text')
-          .map((c: any) => c.text)
-          .join('');
-        
-        const reasoningContent = item.content
-          .filter((c: any) => c.type === 'reasoning')
-          .map((c: any) => c.text)
-          .join('');
-        
-        const refusalContent = item.content
-          .filter((c: any) => c.type === 'refusal')
-          .map((c: any) => c.text)
-          .join('');
+        // Convert MessageItem content using helper functions
+        const regularContent = getMessageText(item.content);
+        const reasoningContent = getContentByType(item.content, 'reasoning');
+        const refusalContent = getContentByType(item.content, 'refusal');
         
         const isUser = item.role === 'user';
         

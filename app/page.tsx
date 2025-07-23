@@ -1,9 +1,7 @@
-import { ChatInterface } from '@/components/chat/chat-interface';
+import { redirect } from 'next/navigation';
+import { generateId } from '@/lib/utils';
 
 export default function HomePage() {
-  return (
-    <main className="h-screen flex flex-col">
-      <ChatInterface className="flex-1" />
-    </main>
-  );
+  const sessionId = generateId();
+  redirect(`/chat/${sessionId}`);
 }

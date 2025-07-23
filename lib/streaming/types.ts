@@ -203,7 +203,8 @@ export interface MessageItem {
   type: "message";
   role: "user" | "assistant" | "system";
   id?: string;
-  content: ContentItem[];
+  content: string | ContentItem[];
+  status?: "completed" | "in_progress"; // Optional status field from database
 }
 
 // Custom items to display in chat
@@ -253,4 +254,87 @@ export type Item =
 export interface ChatMessage {
   role: 'user' | 'assistant';
   content: string;
+} 
+
+export type DatabaseMessage = 
+  | MessageItem
+  | (Omit<ToolCallItem, 'type'> & { type: "function_call" })
+  | { call_id: string; output: string; type: "function_call_output" };
+
+export function transformDatabaseMessagesToItems(databaseMessages: DatabaseMessage[]): Item[] {
+  const items: Item[] = [];
+  const toolCalls = new Map<string, ToolCallItem>();
+  
+  for (const dbMsg of databaseMessages) {
+    // Handle function_call_output - merge with existing tool call
+    if ('type' in dbMsg && dbMsg.type === "function_call_output") {
+      const output = dbMsg as { call_id: string; output: string; type: "function_call_output" };
+      const existingTool = toolCalls.get(output.call_id);
+      if (existingTool) {
+        existingTool.output = output.output;
+        existingTool.status = "completed";
+      }
+      continue; // Don't add as separate item
+    }
+    
+    // Handle function_call - convert to ToolCallItem format
+    if ('type' in dbMsg && dbMsg.type === "function_call") {
+      const funcCall = dbMsg as Omit<ToolCallItem, 'type'> & { type: "function_call" };
+      const toolItem: ToolCallItem = {
+        type: "tool_call", // Convert to frontend format
+        tool_type: funcCall.name || funcCall.tool_type,
+        status: funcCall.status || "completed",
+        id: funcCall.id,
+        name: funcCall.name,
+        call_id: funcCall.call_id,
+        arguments: funcCall.arguments,
+        parsedArguments: funcCall.parsedArguments || (funcCall.arguments ? JSON.parse(funcCall.arguments) : {})
+      };
+      toolCalls.set(toolItem.call_id!, toolItem);
+      items.push(toolItem);
+      continue;
+    }
+    
+    // Handle messages - they're already in the right format, just need type conversion
+    if ('type' in dbMsg && dbMsg.type === "message") {
+      items.push(dbMsg as MessageItem);
+      continue;
+    }
+    
+    // Handle user messages without type field (legacy format)
+    if ('content' in dbMsg && 'role' in dbMsg && !('type' in dbMsg)) {
+      const userMsg = dbMsg as { content: string; role: "user" | "assistant" };
+      items.push({
+        type: "message",
+        role: userMsg.role,
+        content: userMsg.content
+      } as MessageItem);
+    }
+  }
+  
+  return items;
+}
+
+// Helper function to normalize content to string for display
+export function getMessageText(content: string | ContentItem[]): string {
+  if (typeof content === 'string') {
+    return content;
+  }
+  
+  return content
+    .filter(c => c.type === 'input_text' || c.type === 'output_text')
+    .map(c => c.text || '')
+    .join('');
+}
+
+// Helper function to get specific content types
+export function getContentByType(content: string | ContentItem[], type: ContentItem['type']): string {
+  if (typeof content === 'string') {
+    return type === 'input_text' || type === 'output_text' ? content : '';
+  }
+  
+  return content
+    .filter(c => c.type === type)
+    .map(c => c.text || '')
+    .join('');
 } 
