@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Inter } from "next/font/google";
 import "./globals.css";
 import { cn } from "@/lib/utils";
@@ -9,7 +9,11 @@ export const metadata: Metadata = {
   title: "Agent Chat - AI Streaming Assistant",
   description: "Real-time streaming chat interface with AI agents featuring tool execution and advanced capabilities.",
   keywords: "AI, chat, streaming, agents, assistant",
-  viewport: "width=device-width, initial-scale=1",
+};
+
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
 };
 
 export default function RootLayout({

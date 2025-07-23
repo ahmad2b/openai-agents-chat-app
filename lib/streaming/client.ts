@@ -18,7 +18,6 @@ import {
   MCPApprovalEvent,
   MCPToolsEvent,
   FunctionCallArgsEvent,
-  FunctionCallArgsDoneEvent,
   ItemLifecycleEvent,
 } from './types';
 import { AgentInputItem } from '@openai/agents';
@@ -308,7 +307,6 @@ export class AgentStreamClient {
         break;
 
       case 'response.function_call_arguments.done':
-        const funcArgsDoneEvent = event as FunctionCallArgsDoneEvent;
         // Parse the completed arguments
         if (this.currentToolCall.arguments) {
           try {
