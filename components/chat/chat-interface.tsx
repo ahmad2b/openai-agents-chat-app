@@ -19,12 +19,19 @@ import {
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
+import { Markdown } from '@/components/chat/markdown';
 
 interface ChatInterfaceProps {
   className?: string;
 }
 
 export function ChatInterface({ className }: ChatInterfaceProps) {
+  // Memoize the options object to prevent useEffect from rerunning
+  const streamOptions = useMemo(() => ({
+    autoScroll: true,
+    debounceMs: 4
+  }), []);
+
   const {
     isStreaming,
     currentAgent,
@@ -37,10 +44,7 @@ export function ChatInterface({ className }: ChatInterfaceProps) {
     clearMessages,
     hasError,
     hasMessages
-  } = useAgentStream({
-    autoScroll: true,
-    debounceMs: 4
-  });
+  } = useAgentStream(streamOptions);
 
   const scrollAreaRef = useRef<HTMLDivElement>(null);
 
@@ -132,7 +136,7 @@ export function ChatInterface({ className }: ChatInterfaceProps) {
                     <span className="font-medium text-sm text-blue-800 dark:text-blue-300">Reasoning</span>
                   </div>
                   <div className="text-sm text-blue-700 dark:text-blue-200 whitespace-pre-wrap leading-relaxed">
-                    {reasoningContent}
+                    <Markdown>{reasoningContent}</Markdown>
                   </div>
                 </div>
               </div>
@@ -147,7 +151,7 @@ export function ChatInterface({ className }: ChatInterfaceProps) {
                     <span className="font-medium text-sm text-red-800 dark:text-red-300">Content Refused</span>
                   </div>
                   <div className="text-sm text-red-700 dark:text-red-200 whitespace-pre-wrap leading-relaxed">
-                    {refusalContent}
+                    <Markdown>{refusalContent}</Markdown>
                   </div>
                 </div>
               </div>
@@ -166,7 +170,7 @@ export function ChatInterface({ className }: ChatInterfaceProps) {
                     "text-sm leading-relaxed whitespace-pre-wrap",
                     isStreamingItem && "animate-typing"
                   )}>
-                    {regularContent}
+                    <Markdown>{regularContent}</Markdown>
                   </div>
                 </div>
               </div>
@@ -421,6 +425,37 @@ export function ChatInterface({ className }: ChatInterfaceProps) {
             {/* Chat Messages and Items */}
             {renderedMessages}
 
+            {/* Inline Streaming Indicator */}
+            {(isStreaming || messages.some((m: any) => m.type === 'tool_call' && m.status === 'in_progress')) && (
+              <div className="animate-message-in mb-6 px-6">
+                <div className="flex justify-start">
+                  <div className="bg-card text-card-foreground border rounded-2xl px-4 py-3 max-w-2xl mr-12 shadow-sm">
+                    <div className="flex items-center gap-4 text-xs">
+                      {isStreaming && (
+                        <div className="flex items-center gap-2 text-accent">
+                          <div className="w-2 h-2 bg-accent rounded-full animate-pulse" />
+                          <span>Agent is responding...</span>
+                        </div>
+                      )}
+                      
+                      {messages.some((m: any) => m.type === 'tool_call' && m.status === 'in_progress') && (
+                        <div className="flex items-center gap-2 text-amber-600">
+                          <Activity className="w-3 h-3 animate-pulse" />
+                          <span>{messages.filter((m: any) => m.type === 'tool_call' && m.status === 'in_progress').length} tools running</span>
+                        </div>
+                      )}
+                      
+                      {usage && (
+                        <div className="text-muted-foreground">
+                          <span>{usage.total_tokens} tokens</span>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
             {/* Error Display */}
             {hasError && (
               <div className="mx-6 mb-6">
@@ -484,35 +519,6 @@ export function ChatInterface({ className }: ChatInterfaceProps) {
           }
         />
       </div>
-
-      {/* Floating Status Bar */}
-      {(isStreaming || messages.some((m: any) => m.type === 'tool_call' && m.status === 'in_progress')) && (
-        <div className="absolute bottom-20 left-1/2 transform -translate-x-1/2">
-          <div className="bg-background/90 backdrop-blur-lg border border-border/50 rounded-2xl px-4 py-2 shadow-lg">
-            <div className="flex items-center gap-4 text-xs">
-              {isStreaming && (
-                <div className="flex items-center gap-2 text-accent">
-                  <div className="w-2 h-2 bg-accent rounded-full animate-pulse" />
-                  Agent is responding...
-                </div>
-              )}
-              
-              {messages.some((m: any) => m.type === 'tool_call' && m.status === 'in_progress') && (
-                <div className="flex items-center gap-2 text-amber-600">
-                  <Activity className="w-3 h-3 animate-pulse" />
-                  {messages.filter((m: any) => m.type === 'tool_call' && m.status === 'in_progress').length} tools running
-                </div>
-              )}
-              
-              {usage && (
-                <div className="text-muted-foreground">
-                  {usage.total_tokens} tokens
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 } 

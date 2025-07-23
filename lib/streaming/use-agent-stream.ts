@@ -72,9 +72,18 @@ export function useAgentStream(options: UseAgentStreamOptions = {}) {
     });
   }, []);
 
+  // Initialize client only once
   useEffect(() => {
-    const client = new AgentStreamClient();
-    clientRef.current = client;
+    if (!clientRef.current) {
+      const client = new AgentStreamClient();
+      clientRef.current = client;
+    }
+  }, []);
+
+  // Set up event handlers separately to avoid recreating client
+  useEffect(() => {
+    const client = clientRef.current;
+    if (!client) return;
 
     // Set up event handlers
     client.onTextDelta = (delta, fullText) => {
@@ -257,13 +266,24 @@ export function useAgentStream(options: UseAgentStreamOptions = {}) {
     };
 
     return () => {
-      // Cleanup debounce timer
+      // Only cleanup debounce timer when event handlers change
       if (debounceRef.current) {
         clearTimeout(debounceRef.current);
       }
-      client.stopStream();
     };
-  }, [updateTextContent, options, debounceMs, currentAgent]);
+      }, [updateTextContent, options, debounceMs, currentAgent]);
+
+  // Cleanup on component unmount only
+  useEffect(() => {
+    return () => {
+      if (debounceRef.current) {
+        clearTimeout(debounceRef.current);
+      }
+      if (clientRef.current) {
+        clientRef.current.stopStream();
+      }
+    };
+  }, []);
 
   const startStream = async (message: string) => {
     if (!clientRef.current || isStreaming) return;

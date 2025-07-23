@@ -73,6 +73,13 @@ export class AgentStreamClient {
     this.log('info', `Starting stream for message: "${message}" (max_turns: ${maxTurns})`);
     this.eventCount = 0;
     
+    // Validate message input
+    if (!message || (typeof message === 'string' && message.trim() === '')) {
+      this.log('error', 'Invalid message: message cannot be empty');
+      this.onError?.('Message cannot be empty');
+      return;
+    }
+    
     // Create new abort controller for this stream
     this.abortController = new AbortController();
     
@@ -92,10 +99,19 @@ export class AgentStreamClient {
   private async executeStream(message: string | AgentInputItem, maxTurns: number): Promise<void> {
     this.log('info', 'Executing stream request to backend');
     
+    // Check if already aborted
+    if (this.abortController?.signal.aborted) {
+      this.log('info', 'Request already aborted, skipping');
+      return;
+    }
+    
+    const requestBody = JSON.stringify({ message });
+    this.log('info', `Request body: ${requestBody}`);
+    
     const response = await fetch('/api/chat', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ message, max_turns: maxTurns }),
+      body: requestBody,
       signal: this.abortController?.signal
     });
 
@@ -110,6 +126,9 @@ export class AgentStreamClient {
         }
         if (errorData.error === 'Backend service unavailable') {
           errorMessage = 'Backend service is not available. Please ensure the chat service is running on port 8000.';
+        } else if (errorData.error === 'Invalid JSON' || errorData.error === 'Missing request body') {
+          // These are client-side validation errors that shouldn't be retried
+          errorMessage = `Request validation error: ${errorData.message}`;
         }
       } catch (parseError) {
         // If we can't parse the error, use the default message
@@ -392,6 +411,11 @@ export class AgentStreamClient {
             error.message.includes('503')) {
           this.log('info', 'Not retrying due to backend unavailability');
           this.onError?.('Backend service is unavailable. Please ensure the chat service is running on port 8000.');
+          return;
+        }
+        if (error.message.includes('Request validation error')) {
+          this.log('info', 'Not retrying due to client validation error');
+          this.onError?.(error.message);
           return;
         }
       }

@@ -11,7 +11,7 @@ export async function POST(request: NextRequest) {
       return new Response('Missing message parameter', { status: 400 });
     }
 
-    // Forward the request to the actual backend
+    // Forward the request to the agent
     const backendResponse = await fetch(CHAT_STREAM_ENDPOINT, {
       method: 'POST',
       headers: {
@@ -20,6 +20,7 @@ export async function POST(request: NextRequest) {
       },
       body: JSON.stringify({ 
         input: message, 
+        session_id: '123',
       }),
     });
 
