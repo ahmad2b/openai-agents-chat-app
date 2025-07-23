@@ -42,7 +42,12 @@ export interface FunctionCallArgsEvent extends RawResponseEvent {
   event_type: 'response.function_call_arguments.delta';
   delta: string;
   function_call: true;
-  call_id: string;
+  call_id?: string;
+}
+
+export interface FunctionCallArgsDoneEvent extends RawResponseEvent {
+  event_type: 'response.function_call_arguments.done';
+  sequence_number: number;
 }
 
 export interface ResponseLifecycleEvent extends RawResponseEvent {
@@ -162,6 +167,7 @@ export type StreamEvent =
   | ReasoningDeltaEvent
   | RefusalDeltaEvent
   | FunctionCallArgsEvent
+  | FunctionCallArgsDoneEvent
   | ResponseLifecycleEvent
   | ContentLifecycleEvent
   | ItemLifecycleEvent
