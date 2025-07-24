@@ -66,6 +66,8 @@ export interface ItemLifecycleEvent extends RawResponseEvent {
   event_type: 'response.output_item.added' | 'response.output_item.done';
   output_index: number;
   item_type: string;
+  tool_name?: string;
+  call_id?: string;
 }
 
 // Run item events
@@ -85,7 +87,7 @@ export interface MessageCreatedEvent extends RunItemEvent {
 export interface ToolCalledEvent extends RunItemEvent {
   name: 'tool_called';
   tool_name: string;
-  tool_arguments: Record<string, any>;
+  tool_arguments: string | Record<string, any>;
   call_id: string;
 }
 

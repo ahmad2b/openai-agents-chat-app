@@ -221,7 +221,7 @@ export function useAgentStream(options: UseAgentStreamOptions = {}) {
       const toolCallItem: ToolCallItem = {
         type: 'tool_call',
         id: callId || generateId(),
-        tool_type: toolName, // Use the tool name as the tool_type since it's now a string
+        tool_type: toolName,
         name: toolName,
         call_id: callId,
         status: 'in_progress',

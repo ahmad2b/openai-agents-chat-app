@@ -39,6 +39,7 @@ export class AgentStreamClient {
     arguments?: string;
     parsedArguments?: Record<string, any>;
     callId?: string;
+    alreadyCreated?: boolean; // Flag to track if tool call was already created early
   } = {};
 
   // Event callbacks - can be overridden
@@ -312,18 +313,17 @@ export class AgentStreamClient {
           try {
             this.currentToolCall.parsedArguments = JSON.parse(this.currentToolCall.arguments);
             this.log('info', `Function call args complete:`, this.currentToolCall.parsedArguments);
-            
-            // Create tool call immediately when arguments are complete
+            // If we already have the tool name from response.output_item.added, create the tool call now
             // This shows the tool as "running" before the backend processes it
-            const toolName = this.extractToolNameFromArguments();
-            const callId = this.generateCallId();
-            
-            // Store for later matching
-            this.currentToolCall.name = toolName;
-            this.currentToolCall.callId = callId;
-            
-            this.log('info', `Creating early tool call: ${toolName} with args:`, this.currentToolCall.parsedArguments);
-            this.onToolCalled?.(toolName, this.currentToolCall.parsedArguments || {}, callId);
+            if (this.currentToolCall.name) {
+              const callId = this.currentToolCall.callId || this.generateCallId();
+              
+              this.log('info', `Creating tool call early: ${this.currentToolCall.name} with args:`, this.currentToolCall.parsedArguments);
+              this.onToolCalled?.(this.currentToolCall.name, this.currentToolCall.parsedArguments || {}, callId);
+              
+              // Mark that we've already created this tool call to avoid duplicates
+              this.currentToolCall.alreadyCreated = true;
+            }
             
           } catch (e) {
             this.log('error', `Failed to parse function call arguments: ${this.currentToolCall.arguments}`, e);
@@ -333,11 +333,21 @@ export class AgentStreamClient {
         break;
 
       case 'response.output_item.added':
-        const itemEvent = event as ItemLifecycleEvent;
+        const itemEvent = event as ItemLifecycleEvent & { tool_name?: string; call_id?: string };
         if (itemEvent.item_type === 'function_call') {
           // Reset tool call tracking for new function call
           this.currentToolCall = {};
           this.log('info', `Function call item added at output_index: ${itemEvent.output_index}`);
+          
+          // Extract tool name and call_id early if available
+          if (itemEvent.tool_name) {
+            this.currentToolCall.name = itemEvent.tool_name;
+            this.log('info', `Tool name extracted early: ${itemEvent.tool_name}`);
+          }
+          if (itemEvent.call_id) {
+            this.currentToolCall.callId = itemEvent.call_id;
+            this.log('info', `Call ID extracted early: ${itemEvent.call_id}`);
+          }
         }
         break;
 
@@ -363,14 +373,27 @@ export class AgentStreamClient {
         const toolEvent = event as ToolCalledEvent;
         
         // Check if we already created this tool call early
-        if (this.currentToolCall.name && this.currentToolCall.callId) {
+        if (this.currentToolCall.alreadyCreated) {
           this.log('info', `Tool call already created early, skipping duplicate: ${this.currentToolCall.name}`);
           return;
         }
         
-        // Use tracked tool call information instead of null values from event
-        const toolName = toolEvent.tool_name || this.extractToolNameFromArguments();
-        const toolArgs = toolEvent.tool_arguments || this.currentToolCall.parsedArguments || {};
+        // Use the tool information from the event, with fallbacks to tracked information
+        const toolName = toolEvent.tool_name || this.currentToolCall.name || "unknown_tool";
+        
+        // Parse tool arguments if they're a JSON string
+        let toolArgs: Record<string, any> = this.currentToolCall.parsedArguments || {};
+        if (toolEvent.tool_arguments) {
+          try {
+            toolArgs = typeof toolEvent.tool_arguments === 'string' 
+              ? JSON.parse(toolEvent.tool_arguments) 
+              : toolEvent.tool_arguments;
+          } catch (e) {
+            this.log('error', `Failed to parse tool_arguments: ${toolEvent.tool_arguments}`, e);
+            toolArgs = this.currentToolCall.parsedArguments || {};
+          }
+        }
+        
         const callId = toolEvent.call_id || this.currentToolCall.callId || this.generateCallId();
         
         this.log('info', `Tool called: ${toolName}`, {
@@ -379,7 +402,7 @@ export class AgentStreamClient {
           args: toolArgs
         });
         
-        // Store the call ID for matching with output later
+        // Store the call ID and name for matching with output later
         this.currentToolCall.callId = callId;
         this.currentToolCall.name = toolName;
         
@@ -397,6 +420,7 @@ export class AgentStreamClient {
           call_id: outputCallId,
           output_length: outputEvent.output.length
         });
+        
         this.onToolOutput?.(outputToolName, outputEvent.output, outputCallId);
         
         // Reset tool call tracking after output
@@ -554,31 +578,6 @@ export class AgentStreamClient {
       this.abortController.abort();
     }
     this.abortController = undefined;
-  }
-
-  // Helper method to extract tool name from arguments when tool_name is null
-  private extractToolNameFromArguments(): string {
-    // Try to infer tool name from arguments structure
-    if (this.currentToolCall.parsedArguments) {
-      const args = this.currentToolCall.parsedArguments;
-      
-      // Common patterns for different tools
-      if (args.city || args.location) {
-        return 'get_weather';
-      }
-      if (args.query || args.search) {
-        return 'search_tool';
-      }
-      if (args.url || args.endpoint) {
-        return 'web_request';
-      }
-      if (args.code || args.language) {
-        return 'code_executor';
-      }
-    }
-    
-    // Fallback to generic name
-    return 'unknown_tool';
   }
 
   // Helper method to generate a unique call ID when missing
